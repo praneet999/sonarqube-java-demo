@@ -167,8 +167,8 @@ EOF
     <servers>
         <server>
             <id>nexus-snapshots</id>
-            <username>${env.NEXUS_USERNAME}</username>
-            <password>${env.NEXUS_PASSWORD}</password>
+            <username>${NEXUS_USERNAME}</username>
+            <password>${NEXUS_PASSWORD}</password>
         </server>
     </servers>
 </settings>
