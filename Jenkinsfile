@@ -14,7 +14,7 @@ pipeline {
             steps {
 
                 git branch: 'main',
-                    url: 'https://github.com/nischalveenarudresh-pixel/sonarqube-java-demo.git'
+                    url: 'https://github.com/praneet999/sonarqube-java-demo.git'
 
             }
         }
