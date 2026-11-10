@@ -1,29 +1,104 @@
-<html>
+
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>DevOps CI/CD Demo</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Java CI/CD Application</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            padding: 45px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            max-width: 550px;
+            width: 90%;
+        }
+
+        h1 {
+            color: #2563eb;
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: #475569;
+            font-size: 17px;
+            line-height: 1.7;
+        }
+
+        .status {
+            display: inline-block;
+            margin: 25px 0;
+            padding: 10px 20px;
+            background: #dcfce7;
+            color: #166534;
+            border-radius: 25px;
+            font-weight: bold;
+        }
+
+        .details {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            color: #334155;
+            line-height: 1.8;
+        }
+
+        footer {
+            margin-top: 25px;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+    </style>
 </head>
 
 <body>
 
-    <h1>Welcome to DevOps CI/CD Pipeline!</h1>
+    <div class="container">
 
-    <h2>Application deployed successfully.</h2>
+        <h1>Welcome to My Java Application!</h1>
 
-    <p>Deployed using Jenkins, SonarQube, Maven, Nexus and Tomcat.</p>
+        <p>
+            Your application has been successfully deployed
+            on Apache Tomcat.
+        </p>
 
-</body>
-</html><html>
-<head>
-    <title>DevOps CI/CD Demo</title>
-</head>
+        <div class="status">
+            Application Status: RUNNING
+        </div>
 
-<body>
+        <div class="details">
+            <p><strong>Application:</strong> SonarQube Java Demo</p>
+            <p><strong>Build Tool:</strong> Maven</p>
+            <p><strong>CI/CD:</strong> Jenkins</p>
+            <p><strong>Artifact Repository:</strong> Nexus</p>
+            <p><strong>Application Server:</strong> Apache Tomcat 10</p>
+        </div>
 
-    <h1>Welcome to DevOps CI/CD Pipeline!</h1>
+        <footer>
+            Java CI/CD Pipeline Project
+        </footer>
 
-    <h2>Application deployed successfully.</h2>
-
-    <p>Deployed using Jenkins, SonarQube, Maven, Nexus and Tomcat.</p>
+    </div>
 
 </body>
 </html>
