@@ -1,0 +1,213 @@
+
+pipeline {
+
+    agent {
+        label 'agent1'
+    }
+
+    options {
+        timestamps()
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+    }
+
+    environment {
+
+        // Application configuration
+        APP_NAME = 'sonarqube-java-demo'
+        WAR_FILE = 'target/sonarqube-java-demo.war'
+
+        // GitHub configuration
+        GIT_URL = 'https://github.com/praneet999/sonarqube-java-demo.git'
+        GIT_BRANCH = 'main'
+
+        // SonarQube configuration
+        SONAR_PROJECT_KEY = 'sonarqube-java-demo'
+
+        // Tomcat configuration
+        TOMCAT_HOST = '172.31.9.142'
+        TOMCAT_USER = 'ubuntu'
+        TOMCAT_WEBAPPS = '/var/lib/tomcat10/webapps'
+        TOMCAT_SERVICE = 'tomcat10'
+
+        // Application URL
+        APP_URL = 'http://172.31.9.142:8080/sonarqube-java-demo/'
+    }
+
+    stages {
+
+        // STAGE 1: CHECKOUT
+
+        stage('Checkout') {
+            steps {
+                echo 'Checking out source code from GitHub'
+
+                git branch: "${GIT_BRANCH}",
+                    url: "${GIT_URL}"
+            }
+        }
+
+
+        // STAGE 2: BUILD AND TEST
+
+        stage('Build and Test') {
+            steps {
+                echo 'Building Java application using Maven'
+
+                sh '''
+                    set -e
+
+                    java -version
+                    mvn -version
+
+                    mvn clean verify
+
+                    test -f "$WAR_FILE"
+
+                    ls -lh "$WAR_FILE"
+                '''
+
+                archiveArtifacts(
+                    artifacts: 'target/*.war',
+                    fingerprint: true
+                )
+            }
+        }
+
+
+        // STAGE 3: SONARQUBE ANALYSIS
+
+        stage('SonarQube Analysis') {
+            steps {
+
+                withSonarQubeEnv('SonarQube') {
+
+                    withCredentials([
+                        string(
+                            credentialsId: 'sonar-token',
+                            variable: 'SONAR_TOKEN'
+                        )
+                    ]) {
+
+                        sh '''
+                            set -eu
+                            set +x
+
+                            mvn \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar \
+                            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+                            -Dsonar.token="$SONAR_TOKEN" \
+                            -Dsonar.java.binaries=target/classes \
+                            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                        '''
+                    }
+                }
+            }
+        }
+
+
+        // STAGE 4: QUALITY GATE
+
+        stage('Quality Gate') {
+            steps {
+
+                timeout(time: 5, unit: 'MINUTES') {
+
+                    waitForQualityGate abortPipeline: true
+
+                }
+            }
+        }
+
+
+        // STAGE 5: DEPLOY WAR DIRECTLY TO TOMCAT
+
+        stage('Deploy to Tomcat') {
+            steps {
+
+                echo 'Deploying WAR directly to Tomcat EC2'
+
+                sshagent(credentials: ['tomcat-ssh']) {
+
+                    sh '''
+                        set -eu
+
+                        test -f "$WAR_FILE"
+
+                        echo "Copying WAR to Tomcat"
+
+                        scp -o StrictHostKeyChecking=no \
+                            "$WAR_FILE" \
+                            "$TOMCAT_USER@$TOMCAT_HOST:/tmp/$APP_NAME.war"
+
+                        echo "Installing WAR with correct ownership"
+
+                        ssh -o StrictHostKeyChecking=no \
+                            "$TOMCAT_USER@$TOMCAT_HOST" \
+                            "sudo install \
+                                -o tomcat \
+                                -g tomcat \
+                                -m 0644 \
+                                /tmp/$APP_NAME.war \
+                                $TOMCAT_WEBAPPS/$APP_NAME.war"
+
+                        echo "Restarting Tomcat"
+
+                        ssh -o StrictHostKeyChecking=no \
+                            "$TOMCAT_USER@$TOMCAT_HOST" \
+                            "sudo systemctl restart $TOMCAT_SERVICE"
+
+                        echo "Deployment completed"
+                    '''
+                }
+            }
+        }
+
+
+        // STAGE 6: VERIFY APPLICATION
+
+        stage('Verify Application') {
+            steps {
+
+                sh '''
+                    set -eu
+
+                    echo "Waiting for Tomcat to deploy application"
+
+                    sleep 10
+
+                    curl --fail \
+                        --retry 5 \
+                        --retry-delay 5 \
+                        --retry-connrefused \
+                        "$APP_URL"
+
+                    echo "Application is responding successfully"
+                '''
+            }
+        }
+
+    }
+
+
+    // POST BUILD ACTIONS
+
+    post {
+
+        success {
+            echo '================================'
+            echo 'PIPELINE COMPLETED SUCCESSFULLY'
+            echo 'SonarQube Quality Gate passed'
+            echo 'Application deployed to Tomcat'
+            echo '================================'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check the failed stage logs.'
+        }
+
+        always {
+            echo 'Pipeline execution finished.'
+        }
+    }
+}
