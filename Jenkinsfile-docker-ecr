@@ -1,0 +1,211 @@
+pipeline {
+    agent {
+        label 'agent1'
+    }
+
+    options {
+        timestamps()
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        GIT_URL = 'https://github.com/praneet999/sonarqube-java-demo.git'
+        GIT_BRANCH = 'main'
+
+        SONAR_PROJECT_KEY = 'sonarqube-java-demo'
+
+        AWS_REGION = 'ap-south-1'
+        ECR_REPOSITORY = 'sonarqube-java-demo'
+
+        TOMCAT_HOST = '172.31.9.142'
+        TOMCAT_USER = 'ubuntu'
+
+        CONTAINER_NAME = 'sonarqube-java-demo'
+        HOST_PORT = '8080'
+        CONTAINER_PORT = '8080'
+
+        APP_URL = 'http://172.31.9.142:8080/sonarqube-java-demo/'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo 'Checking out source code from GitHub'
+
+                git branch: "${GIT_BRANCH}",
+                    url: "${GIT_URL}"
+            }
+        }
+
+        stage('Build and Test') {
+            steps {
+                echo 'Building the Java application using Maven'
+
+                sh '''
+                    set -eu
+
+                    java -version
+                    mvn -version
+
+                    mvn clean verify
+
+                    test -f target/sonarqube-java-demo.war
+
+                    ls -lh target/sonarqube-java-demo.war
+                '''
+
+                archiveArtifacts(
+                    artifacts: 'target/*.war',
+                    fingerprint: true
+                )
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    withCredentials([
+                        string(
+                            credentialsId: 'sonar-token',
+                            variable: 'SONAR_TOKEN'
+                        )
+                    ]) {
+                        sh '''
+                            set -eu
+                            set +x
+
+                            mvn \
+                            org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar \
+                            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+                            -Dsonar.token="$SONAR_TOKEN" \
+                            -Dsonar.java.binaries=target/classes \
+                            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Docker Build and Push to ECR') {
+            steps {
+                script {
+                    env.AWS_ACCOUNT_ID = sh(
+                        script: 'aws sts get-caller-identity --query Account --output text',
+                        returnStdout: true
+                    ).trim()
+
+                    env.ECR_REGISTRY =
+                        "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+
+                    env.IMAGE_TAG = env.BUILD_NUMBER
+
+                    env.IMAGE_URI =
+                        "${env.ECR_REGISTRY}/${env.ECR_REPOSITORY}:${env.IMAGE_TAG}"
+
+                    echo "Building Docker image: ${env.IMAGE_URI}"
+
+                    sh '''
+                        set -eu
+
+                        aws ecr get-login-password \
+                            --region "$AWS_REGION" |
+                            docker login \
+                                --username AWS \
+                                --password-stdin "$ECR_REGISTRY"
+
+                        docker build \
+                            -t "$ECR_REPOSITORY:$IMAGE_TAG" .
+
+                        docker tag \
+                            "$ECR_REPOSITORY:$IMAGE_TAG" \
+                            "$IMAGE_URI"
+
+                        docker push "$IMAGE_URI"
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Tomcat EC2') {
+            steps {
+                sshagent(credentials: ['tomcat-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ssh -o StrictHostKeyChecking=no \
+                            "$TOMCAT_USER@$TOMCAT_HOST" \
+                            "AWS_REGION='$AWS_REGION' \
+                             ECR_REGISTRY='$ECR_REGISTRY' \
+                             IMAGE_URI='$IMAGE_URI' \
+                             CONTAINER_NAME='$CONTAINER_NAME' \
+                             HOST_PORT='$HOST_PORT' \
+                             CONTAINER_PORT='$CONTAINER_PORT' \
+                             bash -s" <<'REMOTE'
+
+                            set -eu
+
+                            aws ecr get-login-password \
+                                --region "$AWS_REGION" |
+                                sudo docker login \
+                                    --username AWS \
+                                    --password-stdin "$ECR_REGISTRY"
+
+                            sudo docker pull "$IMAGE_URI"
+
+                            sudo docker rm -f "$CONTAINER_NAME" || true
+
+                            sudo docker run -d \
+                                --name "$CONTAINER_NAME" \
+                                --restart unless-stopped \
+                                -p "$HOST_PORT:$CONTAINER_PORT" \
+                                "$IMAGE_URI"
+
+                            sudo docker ps
+
+REMOTE
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Application') {
+            steps {
+                sh '''
+                    set -eu
+
+                    sleep 10
+
+                    curl --fail \
+                        --retry 5 \
+                        --retry-delay 5 \
+                        --retry-connrefused \
+                        "$APP_URL"
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'ASSIGNMENT 3: CI/CD PIPELINE SUCCESSFUL'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check the Jenkins Console Output.'
+        }
+
+        always {
+            echo 'Pipeline execution completed.'
+        }
+    }
+}
